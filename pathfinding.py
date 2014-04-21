@@ -348,11 +348,48 @@ class Sandbox(object):
         self.path_iter = iter(self.pathfinder.find_path())
 
     def set_start_end_points(self):
-        open_points = self.board.get_open_points()
-        self.board.start_point = random.choice(open_points)
+        def is_ccw((p1_x, p1_y), (p2_x, p2_y), (p3_x, p3_y)):
+            """Whether 3 points constitute a straight line or "left" turn"""
+            ccw = (p2_x - p1_x) * (p3_y - p1_y) - (p2_y - p1_y) * (p3_x - p1_x)
+            return ccw >= 0
 
-        open_points.remove(self.board.start_point)
-        self.board.end_point = random.choice(open_points)
+        def angle((p1_x, p1_y), (p2_x, p2_y)):
+            d_x = p2_x - p1_x
+            d_y = p2_y - p1_y
+            return math.atan2(d_y, d_x)
+
+        def dist((p1_x, p1_y), (p2_x, p2_y)):
+            return math.sqrt((p2_x - p1_x) ** 2 + (p2_y - p1_y) ** 2)
+
+        points = self.board.get_open_points()
+        # Remove all points on the border, 'cause they're not interesting
+        points = filter(lambda (x, y): (x not in (self.board.width, 0)
+                                        and y not in (self.board.height, 0)),
+                        points)
+        points.sort(key=lambda (x, y): (y, x))
+
+        first_point = points[0]
+        points = sorted(points[1:], key=lambda p: angle(p, first_point))
+
+        hull = [first_point, points[0]]
+        for point in points:
+            if is_ccw(*(hull[-2:] + [point])):
+                hull.append(point)
+            else:
+                hull = hull[:-1]
+
+        farthest_points = None
+        farthest_distance = -1
+        not_measured = hull[:]
+        for fixed in hull:
+            not_measured.remove(fixed)
+            for point in not_measured:
+                distance = dist(fixed, point)
+                if distance > farthest_distance:
+                    farthest_distance = distance
+                    farthest_points = (fixed, point)
+
+        self.board.start_point, self.board.end_point = farthest_points
 
     def initialize_screen(self):
         width, height = self.board.size()
@@ -372,7 +409,7 @@ class Sandbox(object):
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     os._exit(0)
-                elif event.type == RESETEVENT:
+                elif event.type in (RESETEVENT, pygame.MOUSEBUTTONUP):
                     self.reset()
                     state = STATE_DRAWING
                     # Cancel repeating timer
